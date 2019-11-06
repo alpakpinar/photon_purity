@@ -12,6 +12,7 @@ The purity calculation is triggered by a single script:
 ```bash
 ./fit_photon_purity.py ./path/to/input
 ```
+The input directory should be a `klepto.dir_archive` containing the processor output merged using `bumerge`.
 
 Three steps are executed:
 
