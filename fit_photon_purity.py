@@ -2,7 +2,7 @@
 import os
 import sys
 from klepto.archives import dir_archive
-from template_fit import make_templates,fit_templates
+from template_fit import make_templates,fit_templates, plot_purity
 pjoin = os.path.join
 
 
@@ -27,6 +27,11 @@ def main():
         make_templates(acc, fout=template_file)
 
     # Do the fit
-    # fit_templates(template_file)
+    # Makes fits if necessart
+    if not os.path.exists('results.pkl'):
+        fit_templates(template_file)
+
+    # Make result plots
+    plot_purity()
 if __name__ == "__main__":
     main()
