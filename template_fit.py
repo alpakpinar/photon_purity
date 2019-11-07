@@ -24,7 +24,7 @@ def make_templates(acc, fout):
     scale_xs_lumi(h)
     h = merge_datasets(h)
 
-    pt_ax = hist.Bin('pt','$p_{T}$ (GeV)',list(range(200,400,50)) + list(range(400,800,100)) + [2000])
+    pt_ax = hist.Bin('pt','$p_{T}$ (GeV)',list(range(200,700,50))  + [2000])
     h = h.rebin('pt', pt_ax)
     h_iso = h.project('cat','medium_nosieie')
     h_noniso = h.project('cat','medium_nosieie_invertiso')
@@ -75,6 +75,13 @@ result = namedtuple('result',
                             'year',
                             'pt'
                             ])
+
+def pretty_title(pt_tag, year):
+    m = re.match(f'pt(\d+)-(\d+)', str(pt_tag))
+    lo, hi = m.groups()
+
+    return f'{year}: Photon p_{{T}}: {lo} - {hi} GeV'
+
 def fit_templates(template_file):
 
     outdir = './plots/'
@@ -98,7 +105,7 @@ def fit_templates(template_file):
             def get_hist(name):
                 h = f.Get(f'{name}_{pt_tag}').Clone()
                 print(name, h.Integral())
-                h.Rebin(2)
+                h.Rebin(4)
 
                 nbins = h.GetNbinsX()
                 overflow = h.GetBinContent(nbins+1)
@@ -131,7 +138,7 @@ def fit_templates(template_file):
                                 dh_bad
                                 );
 
-            purity = RooRealVar('purity', 'purity', 0.9,0.,5)
+            purity = RooRealVar('purity', 'purity', 0.95,0.7,1)
             # purity2 = RooRealVar('purity2', 'purity2', 1,0.,5)
 
             model = RooRealSumPdf(
@@ -143,7 +150,7 @@ def fit_templates(template_file):
 
             c1 = r.TCanvas( 'c1','c1', 200, 10, 700, 500 )
 
-            frame = x.frame(RooFit.Title("title"));
+            frame = x.frame(RooFit.Title(pretty_title(pt_tag, year)));
             dh_data.plotOn(frame)
             model.plotOn(frame, RooFit.LineColor(r.kGray+1))
             model.plotOn(frame, RooFit.Components('rhf_bad'),RooFit.LineStyle(r.kDashed), RooFit.LineColor(r.kRed));
@@ -175,7 +182,7 @@ def fit_templates(template_file):
             t.append(add_text(0.15,0.5,0.7,0.8, f'Purity full range = {purity.getVal():.3f} #pm {purity.getError():.2e}'))
             t.append(add_text(0.15,0.5,0.8,0.9, f'Purity in acceptance = {purity_in_acc:.3f}'))
             # t.append(add_text(0.5,0.7,0.5,0.7,"Chi2 / NDF = {0} / {1}".format(chi2.getValV(),dh_data.NumEntries()-npar)))
-            t.append(add_text(0.15,0.4,0.5,0.7,"Chi2 / NDF = {0:.1f}".format(chi2.getValV()/dh_data.numEntries())))
+            # t.append(add_text(0.15,0.4,0.5,0.7,"Chi2 / NDF = {0:.1f}".format(chi2.getValV()/dh_data.numEntries())))
             # tt=add_text(0.15,0.4,0.4,0.6, f'Purity2 = {purity2.getVal():.2f}^{{ +{purity2.getErrorHi():.2f}}}_{{ {purity2.getErrorLo():.2f}}}')
             c1.SetLogy(1)
             c1.SaveAs(pjoin(outdir,f"fit_{year}_{pt_tag}.png"))
