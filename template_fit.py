@@ -210,6 +210,7 @@ def plot_purity(result_file):
 
         # plt.plot(x,y_tot,'o--',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.015$', color=p[0].get_color(), fillstyle='none')
         # print(x,y,y_tot)
+    plt.gca().grid(1,linestyle='--')
     plt.gca().set_ylabel("Impurity (%)")
     plt.gca().set_xlabel("Photon $p_{T}$ (GeV)")
     plt.gca().set_ylim(0,5)
