@@ -24,14 +24,14 @@ def make_templates(acc, fout):
     scale_xs_lumi(h)
     h = merge_datasets(h)
 
-    pt_ax = hist.Bin('pt','$p_{T}$ (GeV)',list(range(200,700,50))  + [2000])
+    pt_ax = hist.Bin('pt','$p_{T}$ (GeV)',list(range(200,400,50)) + list(range(400,700,100))  + [1000])
     h = h.rebin('pt', pt_ax)
     h_iso = h.project('cat','medium_nosieie')
     h_noniso = h.project('cat','medium_nosieie_invertiso')
 
     # Make templates
     templates = {}
-    for year in [2017, 2018]:
+    for year in [2016, 2017, 2018]:
         mc = re.compile(f'(GJet).*HT.*{year}')
         data = re.compile(f'(EGamma).*{year}.*')
         templates[f'{year}_good'] = h_iso[mc].integrate('dataset')
@@ -63,7 +63,8 @@ from ROOT import (
                   RooHistFunc,
                   RooRealSumPdf,
                   RooArgSet,
-                  RooChi2Var
+                  RooChi2Var,
+                  RooHistPdf
                   )
 
 r.gROOT.SetBatch(r.kTRUE)
@@ -99,7 +100,7 @@ def fit_templates(template_file):
 
     results = []
     for pt_tag in set(pt_tags):
-        for year in [2017, 2018]:
+        for year in [2016, 2017, 2018]:
             x = RooRealVar("x","#sigma_{i#eta i#eta}",0,0.015,"")
 
             def get_hist(name):
@@ -116,7 +117,7 @@ def fit_templates(template_file):
                 h.SetBinContent(nbins, overflow + doverflow)
                 h.SetBinError(nbins, np.hypot(doverflow, dlastbin))
 
-                # h.Scale(1./h.Integral())
+                h.Scale(1./h.Integral('width'))
                 return h
 
 
@@ -125,18 +126,22 @@ def fit_templates(template_file):
             dh_bad  = RooDataHist("bad", "bad", RooArgList(x), get_hist(f'{year}_bad'),1) ;
             dh_good = RooDataHist("good", "good", RooArgList(x), get_hist(f'{year}_good'),1) ;
 
-            rhf_good = RooHistFunc(
+            rhf_good = RooHistPdf(
                                 "rhf_good",
                                 "rhf_good",
                                 RooArgSet(x),
                                 dh_good
                                 );
-            rhf_bad  = RooHistFunc(
+            rhf_bad  = RooHistPdf(
                                 "rhf_bad",
                                 "rhf_bad",
                                 RooArgSet(x),
                                 dh_bad
                                 );
+            rhf_good.setUnitNorm(True)
+            rhf_bad.setUnitNorm(True)
+            assert(rhf_good.haveUnitNorm())
+            assert(rhf_bad.haveUnitNorm())
 
             purity = RooRealVar('purity', 'purity', 0.95,0.7,1)
             # purity2 = RooRealVar('purity2', 'purity2', 1,0.,5)
@@ -211,8 +216,8 @@ def plot_purity():
 
         p = plt.plot(x,y,'o-',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.01015$')
 
-        plt.plot(x,y_tot,'o--',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.015$', color=p[0].get_color(), fillstyle='none')
-        print(x,y,y_tot)
+        # plt.plot(x,y_tot,'o--',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.015$', color=p[0].get_color(), fillstyle='none')
+        # print(x,y,y_tot)
     plt.gca().set_ylabel("Impurity (%)")
     plt.gca().set_xlabel("Photon $p_{T}$ (GeV)")
     plt.gca().set_ylim(0,5)
