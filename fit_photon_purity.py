@@ -27,11 +27,12 @@ def main():
         make_templates(acc, fout=template_file)
 
     # Do the fit
-    # Makes fits if necessart
-    if not os.path.exists('results.pkl'):
+    # Makes fits if necessary
+    result_file = pjoin(outdir,'results.pkl')
+    if not os.path.exists(result_file):
         fit_templates(template_file)
 
     # Make result plots
-    plot_purity()
+    plot_purity(result_file)
 if __name__ == "__main__":
     main()

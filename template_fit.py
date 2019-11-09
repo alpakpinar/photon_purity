@@ -1,18 +1,35 @@
+import os
 import re
-from coffea.hist.export import export1d
-from coffea import hist
+from collections import namedtuple
+
+import cloudpickle as pickle
 import numpy as np
 import uproot
-from bucoffea.plot.util import (
-                                merge_extensions,
-                                scale_xs_lumi,
-                                merge_datasets
-                                )
-import os
-import cloudpickle as pickle
-pjoin = os.path.join
+from coffea import hist
+from coffea.hist.export import export1d
 from matplotlib import pyplot as plt
+
+import ROOT as r
+r.gSystem.Load('libRooFit')
+from bucoffea.plot.util import merge_datasets, merge_extensions, scale_xs_lumi
+from ROOT import (RooArgList, RooArgSet, RooChi2Var, RooDataHist, RooDataSet,
+                  RooFit, RooHistFunc, RooHistPdf, RooRealSumPdf, RooRealVar)
+
+pjoin = os.path.join
+
+
+r.gROOT.SetBatch(r.kTRUE)
+result = namedtuple('result',
+                            [
+                            'purity_in_acceptance',
+                            'purity_total',
+                            'year',
+                            'pt'
+                            ])
+
+
 def make_templates(acc, fout):
+    '''Reads coffea histograms and converts to ROOT templates.'''
     # Load inputs
     acc.load('sieie')
     acc.load('nevents')
@@ -52,40 +69,17 @@ def make_templates(acc, fout):
             th1 = export1d(histo.integrate('pt', slice(low, high)))
             f[f'{name}_pt{low:.0f}-{high:.0f}'] = th1
 
-import ROOT as r
-r.gSystem.Load('libRooFit')
-from ROOT import (
-                  RooFit,
-                  RooRealVar,
-                  RooDataSet,
-                  RooArgList,
-                  RooDataHist,
-                  RooHistFunc,
-                  RooRealSumPdf,
-                  RooArgSet,
-                  RooChi2Var,
-                  RooHistPdf
-                  )
-
-r.gROOT.SetBatch(r.kTRUE)
-from collections import namedtuple
-result = namedtuple('result',
-                            [
-                            'purity_in_acceptance',
-                            'purity_total',
-                            'year',
-                            'pt'
-                            ])
-
 def pretty_title(pt_tag, year):
+    '''Makes a nice plot title for this bin and year'''
     m = re.match(f'pt(\d+)-(\d+)', str(pt_tag))
     lo, hi = m.groups()
 
     return f'{year}: Photon p_{{T}}: {lo} - {hi} GeV'
 
 def fit_templates(template_file):
-
-    outdir = './plots/'
+    '''Uses the given good/bad/data templates to perform purity fits.'''
+    
+    outdir = pjoin('./plots/', os.path.basename(os.path.dirname(template_file)))
     if not os.path.exists(outdir):
         os.makedirs(outdir)
     f = r.TFile(template_file)
@@ -117,7 +111,7 @@ def fit_templates(template_file):
                 h.SetBinContent(nbins, overflow + doverflow)
                 h.SetBinError(nbins, np.hypot(doverflow, dlastbin))
 
-                h.Scale(1./h.Integral('width'))
+                h.Scale(1./h.Integral())
                 return h
 
 
@@ -138,10 +132,6 @@ def fit_templates(template_file):
                                 RooArgSet(x),
                                 dh_bad
                                 );
-            rhf_good.setUnitNorm(True)
-            rhf_bad.setUnitNorm(True)
-            assert(rhf_good.haveUnitNorm())
-            assert(rhf_bad.haveUnitNorm())
 
             purity = RooRealVar('purity', 'purity', 0.95,0.7,1)
             # purity2 = RooRealVar('purity2', 'purity2', 1,0.,5)
@@ -199,11 +189,13 @@ def fit_templates(template_file):
                 year=year
             ))
 
-    with open('results.pkl','wb') as f:
+    outdir = os.path.dirname(template_file)
+    with open(pjoin(outdir, 'results.pkl'),'wb') as f:
         pickle.dump(results, f)
 
-def plot_purity():
-    with open('results.pkl', 'rb') as f:
+def plot_purity(result_file):
+    '''Plot photon purity as a function of pt for different years.'''
+    with open(result_file, 'rb') as f:
         results = pickle.load(f)
 
     for year in [2017,2018]:
@@ -222,7 +214,11 @@ def plot_purity():
     plt.gca().set_xlabel("Photon $p_{T}$ (GeV)")
     plt.gca().set_ylim(0,5)
     plt.legend()
-    plt.gcf().savefig('purity.pdf')
+
+    outdir = pjoin('./plots/',os.path.basename(os.path.dirname(result_file)))
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
+    plt.gcf().savefig(pjoin(outdir,'purity.pdf'))
 
 def add_text(x1, x2, y1, y2, TEXT, color=r.kBlack, alignment=22, angle = 0, argument="NDC", size = None):
    T = r.TPaveText(x1,y1,x2,y2, argument);
