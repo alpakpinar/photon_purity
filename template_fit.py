@@ -41,7 +41,7 @@ def make_templates(acc, fout):
     scale_xs_lumi(h)
     h = merge_datasets(h)
 
-    pt_ax = hist.Bin('pt','$p_{T}$ (GeV)',list(range(200,400,50)) + list(range(400,700,100))  + [1000])
+    pt_ax = hist.Bin('pt','$p_{T}$ (GeV)',list(range(200,300,50)) + list(range(300,700,100))  + [1000])
     h = h.rebin('pt', pt_ax)
     h_iso = h.project('cat','medium_nosieie')
     h_noniso = h.project('cat','medium_nosieie_invertiso')
@@ -153,6 +153,7 @@ def fit_templates(template_file):
 
             c1.cd()
             frame.Draw()
+            frame.SetMinimum(1e-4)
 
             # print(rhf_bad.dataHist().sum())
             # print(rhf_good.dataHist().sum())
@@ -170,7 +171,9 @@ def fit_templates(template_file):
 
             facc_good = get_facc(rhf_good)
             facc_bad = get_facc(rhf_bad)
-            purity_in_acc = 1 / ( 1 + (facc_bad / facc_good) *(1-purity.getVal())/purity.getVal())
+            R = facc_bad / facc_good
+            purity_in_acc = 1 / ( 1 + R *(1-purity.getVal())/purity.getVal())
+            purity_in_acc_err = R * purity.getError() / (-purity.getVal() * R + R + purity.getVal())
             chi2 = RooChi2Var("chi2","chi2",model,dh_data);
             npar=1
             t = []
@@ -181,9 +184,10 @@ def fit_templates(template_file):
             # tt=add_text(0.15,0.4,0.4,0.6, f'Purity2 = {purity2.getVal():.2f}^{{ +{purity2.getErrorHi():.2f}}}_{{ {purity2.getErrorLo():.2f}}}')
             c1.SetLogy(1)
             c1.SaveAs(pjoin(outdir,f"fit_{year}_{pt_tag}.png"))
+            c1.SaveAs(pjoin(outdir,f"fit_{year}_{pt_tag}.pdf"))
 
             results.append(result(
-                purity_in_acceptance = purity_in_acc,
+                purity_in_acceptance = (purity_in_acc,purity_in_acc_err),
                 purity_total = purity.getVal(),
                 pt = pt_tag,
                 year=year
@@ -199,14 +203,15 @@ def plot_purity(result_file):
         results = pickle.load(f)
 
     for year in [2017,2018]:
-        x, y, y_tot = [], [], []
+        x, y, dy = [], [], []
         for result in sorted(filter(lambda x: x.year==year, results), key=lambda x: float(x.pt.replace('pt','').split('-')[0])):
             low, high = (float(x) for x in result.pt.replace('pt','').split('-'))
             x.append(0.5*(low+high))
-            y.append(100 * (1-result.purity_in_acceptance))
-            y_tot.append(100 * (1-result.purity_total))
+            y.append(100 * (1-result.purity_in_acceptance[0]))
+            dy.append(100 * result.purity_in_acceptance[1])
 
-        p = plt.plot(x,y,'o-',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.01015$')
+        print(x, y, dy)
+        p = plt.errorbar(x,y,dy,fmt='o-',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.01015$')
 
         # plt.plot(x,y_tot,'o--',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.015$', color=p[0].get_color(), fillstyle='none')
         # print(x,y,y_tot)
@@ -220,6 +225,7 @@ def plot_purity(result_file):
     if not os.path.exists(outdir):
         os.makedirs(outdir)
     plt.gcf().savefig(pjoin(outdir,'purity.pdf'))
+    plt.gcf().savefig(pjoin(outdir,'purity.png'))
 
 def add_text(x1, x2, y1, y2, TEXT, color=r.kBlack, alignment=22, angle = 0, argument="NDC", size = None):
    T = r.TPaveText(x1,y1,x2,y2, argument);
