@@ -1,7 +1,7 @@
 import os
 import re
 from collections import namedtuple
-
+import array
 import cloudpickle as pickle
 import numpy as np
 import uproot
@@ -76,9 +76,9 @@ def pretty_title(pt_tag, year):
 
     return f'{year}: Photon p_{{T}}: {lo} - {hi} GeV'
 
-def fit_templates(template_file):
+def fit_templates(template_file, variation):
     '''Uses the given good/bad/data templates to perform purity fits.'''
-    
+
     outdir = pjoin('./plots/', os.path.basename(os.path.dirname(template_file)))
     if not os.path.exists(outdir):
         os.makedirs(outdir)
@@ -93,14 +93,39 @@ def fit_templates(template_file):
         pt_tags.append(m.groups()[0])
 
     results = []
+    limits = {
+        "nominal" : (0.004,0.02),
+        "coarse" : (0.004,0.02),
+        "vcoarse" : (0.004,0.02),
+        "fine" : (0.004,0.02),
+        "vfine" : (0.0058,0.02),
+    }
     for pt_tag in set(pt_tags):
         for year in [2016, 2017, 2018]:
-            x = RooRealVar("x","#sigma_{i#eta i#eta}",0,0.015,"")
+
+            x = RooRealVar("x","#sigma_{i#eta i#eta}",limits[variation][0],limits[variation][1],"")
 
             def get_hist(name):
                 h = f.Get(f'{name}_{pt_tag}').Clone()
                 print(name, h.Integral())
-                h.Rebin(4)
+
+                if variation == 'nominal':
+                    h.Rebin(5)
+                elif variation == 'fine':
+                    h.Rebin(2)
+                elif variation == 'vfine':
+                    h.Rebin(1)
+                elif variation == 'coarse':
+                    h.Rebin(10)
+                elif variation == 'vcoarse':
+                    h.Rebin(25)
+                elif variation == 'twobin':
+                    newbins = array.array("d",[h.GetBinLowEdge(1),0.01,h.GetBinLowEdge(h.GetNbinsX()) + h.GetBinWidth(h.GetNbinsX())])
+                    print("NEWBINS", newbins)
+                    h = h.Rebin(len(newbins)-1, h.GetName()+"_rebin",newbins)
+                else:
+                    raise ValueError(f"Unknown variation: {variation}")
+
 
                 nbins = h.GetNbinsX()
                 overflow = h.GetBinContent(nbins+1)
@@ -153,17 +178,18 @@ def fit_templates(template_file):
 
             c1.cd()
             frame.Draw()
-            frame.SetMinimum(1e-4)
+            frame.SetMinimum(1e-7)
 
             # print(rhf_bad.dataHist().sum())
             # print(rhf_good.dataHist().sum())
-            x.setRange('acceptance', 0,  0.01015 )
-            x.setRange('total', 0, 0.15)
+            x.setRange('acceptance', 0,  0.01 )
+            x.setRange('total', 0, 0.02)
             # print('INTEGRAL:', rhf_good.createIntegral(RooArgSet(x),RooFit.Range('acceptance')).getVal())
             # print('INTEGRAL:', rhf_bad.createIntegral(RooArgSet(x),RooFit.Range('acceptance')).getVal())
             # print('INTEGRAL:', dh_data.createIntegral(RooArgSet(x),RooFit.Range('acceptance')).getVal())
 
             def get_facc(rhf):
+                '''Ratio of events in acceptance to all events'''
                 in_acc = rhf.createIntegral(RooArgSet(x),RooFit.Range('acceptance')).getVal()
                 tot    = rhf.createIntegral(RooArgSet(x),RooFit.Range('total')).getVal()
                 facc  = in_acc / tot
@@ -174,18 +200,12 @@ def fit_templates(template_file):
             R = facc_bad / facc_good
             purity_in_acc = 1 / ( 1 + R *(1-purity.getVal())/purity.getVal())
             purity_in_acc_err = R * purity.getError() / (-purity.getVal() * R + R + purity.getVal())
-            chi2 = RooChi2Var("chi2","chi2",model,dh_data);
-            npar=1
             t = []
-            t.append(add_text(0.15,0.5,0.7,0.8, f'Purity full range = {purity.getVal():.3f} #pm {purity.getError():.2e}'))
-            t.append(add_text(0.15,0.5,0.8,0.9, f'Purity in acceptance = {purity_in_acc:.3f}'))
-            # t.append(add_text(0.5,0.7,0.5,0.7,"Chi2 / NDF = {0} / {1}".format(chi2.getValV(),dh_data.NumEntries()-npar)))
-            # t.append(add_text(0.15,0.4,0.5,0.7,"Chi2 / NDF = {0:.1f}".format(chi2.getValV()/dh_data.numEntries())))
-            # tt=add_text(0.15,0.4,0.4,0.6, f'Purity2 = {purity2.getVal():.2f}^{{ +{purity2.getErrorHi():.2f}}}_{{ {purity2.getErrorLo():.2f}}}')
+            t.append(add_text(0.5,0.8,0.7,0.8, f'Purity full range = ({100*purity.getVal():.1f} #pm {100*purity.getError():.1f}) %'))
+            t.append(add_text(0.5,0.8,0.8,0.9, f'Purity in acceptance = {100*purity_in_acc:.1f} %'))
             c1.SetLogy(1)
-            c1.SaveAs(pjoin(outdir,f"fit_{year}_{pt_tag}.png"))
-            c1.SaveAs(pjoin(outdir,f"fit_{year}_{pt_tag}.pdf"))
-
+            c1.SaveAs(pjoin(outdir,f"fit_{year}_{pt_tag}_{variation}.png"))
+            c1.SaveAs(pjoin(outdir,f"fit_{year}_{pt_tag}_{variation}.pdf"))
             results.append(result(
                 purity_in_acceptance = (purity_in_acc,purity_in_acc_err),
                 purity_total = purity.getVal(),
@@ -194,14 +214,17 @@ def fit_templates(template_file):
             ))
 
     outdir = os.path.dirname(template_file)
-    with open(pjoin(outdir, 'results.pkl'),'wb') as f:
+    with open(pjoin(outdir, f'results_{variation}.pkl'),'wb') as f:
         pickle.dump(results, f)
 
-def plot_purity(result_file):
+def plot_purity(result_file, variation):
     '''Plot photon purity as a function of pt for different years.'''
     with open(result_file, 'rb') as f:
         results = pickle.load(f)
 
+    fig = plt.gcf()
+    fig.clf()
+    ax = plt.gca()
     for year in [2017,2018]:
         x, y, dy = [], [], []
         for result in sorted(filter(lambda x: x.year==year, results), key=lambda x: float(x.pt.replace('pt','').split('-')[0])):
@@ -211,21 +234,80 @@ def plot_purity(result_file):
             dy.append(100 * result.purity_in_acceptance[1])
 
         print(x, y, dy)
-        p = plt.errorbar(x,y,dy,fmt='o-',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.01015$')
+        p = ax.errorbar(x,y,dy,fmt='o-',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.01$')
 
         # plt.plot(x,y_tot,'o--',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.015$', color=p[0].get_color(), fillstyle='none')
         # print(x,y,y_tot)
-    plt.gca().grid(1,linestyle='--')
-    plt.gca().set_ylabel("Impurity (%)")
-    plt.gca().set_xlabel("Photon $p_{T}$ (GeV)")
-    plt.gca().set_ylim(0,5)
-    plt.legend()
+    ax.grid(1,linestyle='--')
+    ax.set_ylabel("Impurity (%)")
+    ax.set_xlabel("Photon $p_{T}$ (GeV)")
+    ax.set_ylim(0,8)
+    ax.legend()
 
     outdir = pjoin('./plots/',os.path.basename(os.path.dirname(result_file)))
     if not os.path.exists(outdir):
         os.makedirs(outdir)
-    plt.gcf().savefig(pjoin(outdir,'purity.pdf'))
-    plt.gcf().savefig(pjoin(outdir,'purity.png'))
+    fig.savefig(pjoin(outdir,f'purity_{variation}.pdf'))
+    fig.savefig(pjoin(outdir,f'purity_{variation}.png'))
+
+
+colors = {
+    "nominal" : "#08306b",
+    "fine" : "#2171b5",
+    "vfine" : "#6baed6",
+    "band" : "#fee6ce"
+}
+colors['vcoarse'] = colors['vfine']
+colors['coarse'] = colors['fine']
+def plot_comparison(result_file_template, variations):
+    '''Plot comparison of variations per year.'''
+
+    for year in [2017,2018]:
+        fig = plt.gcf()
+        fig.clf()
+        ax = plt.gca()
+        x, y, dy = {}, {}, {}
+        for variation in variations:
+            with open(result_file_template.format(variation=variation), 'rb') as f:
+                results = pickle.load(f)
+            x[variation], y[variation], dy[variation] = [], [], []
+            for result in sorted(filter(lambda x: x.year==year, results), key=lambda x: float(x.pt.replace('pt','').split('-')[0])):
+                low, high = (float(x) for x in result.pt.replace('pt','').split('-'))
+                x[variation].append(0.5*(low+high))
+                y[variation].append(100 * (1-result.purity_in_acceptance[0]))
+                dy[variation].append(100 * result.purity_in_acceptance[1])
+
+            x[variation] = np.array(x[variation])
+            y[variation] = np.array(y[variation])
+            dy[variation] = np.array(dy[variation])
+
+            if variation == 'nominal':
+                fmt = 'o'
+            elif 'fine' in variation:
+                fmt = 's'
+            elif 'coarse' in variation:
+                fmt = 'x'
+            p = ax.errorbar(x[variation],y[variation],dy[variation],fmt=fmt,label=f'{year}, {variation}', color=colors[variation],
+            linestyle='-' if variation == 'nominal' else '--',
+            zorder = 10 if variation=='nominal' else 9)
+
+            # plt.plot(x,y_tot,'o--',label=f'{year}, $\sigma_{{i\eta i\eta}} < 0.015$', color=p[0].get_color(), fillstyle='none')
+            # print(x,y,y_tot)
+        ax.grid(1,linestyle='--')
+        ax.set_ylabel("Impurity (%)")
+        ax.set_xlabel("Photon $p_{T}$ (GeV)")
+        ax.set_ylim(0,10)
+
+        unc = (1.25,1.25)
+        ax.fill_between(x['nominal'], y['nominal'] / unc[0], y['nominal'] * unc[1], label=f'nominal + lnN {1/unc[0]:.2f} / {unc[1]:.2f}',color=colors['band'],zorder=-2)
+        ax.legend(title="Binning variations")
+
+        # Save plots
+        outdir = pjoin('./plots/',os.path.basename(os.path.dirname(result_file_template)))
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+        for extension in ['pdf','png']:
+            fig.savefig(pjoin(outdir,f'purity_variations_{year}.{extension}'))
 
 def add_text(x1, x2, y1, y2, TEXT, color=r.kBlack, alignment=22, angle = 0, argument="NDC", size = None):
    T = r.TPaveText(x1,y1,x2,y2, argument);

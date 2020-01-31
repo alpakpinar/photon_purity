@@ -2,7 +2,7 @@
 import os
 import sys
 from klepto.archives import dir_archive
-from template_fit import make_templates,fit_templates, plot_purity
+from template_fit import make_templates,fit_templates, plot_purity, plot_comparison
 pjoin = os.path.join
 
 
@@ -28,11 +28,15 @@ def main():
 
     # Do the fit
     # Makes fits if necessary
-    result_file = pjoin(outdir,'results.pkl')
-    if not os.path.exists(result_file):
-        fit_templates(template_file)
+    variations = ['vfine','fine','nominal','coarse','vcoarse']
+    for variation in variations:
+        result_file = pjoin(outdir,f'results_{variation}.pkl')
+        if not os.path.exists(result_file):
+            fit_templates(template_file,variation)
 
-    # Make result plots
-    plot_purity(result_file)
+        # Make result plots
+        plot_purity(result_file,variation)
+    plot_comparison(pjoin(outdir, 'results_{variation}.pkl'),variations)
+
 if __name__ == "__main__":
     main()
