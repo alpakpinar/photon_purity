@@ -8,7 +8,8 @@ import uproot
 from coffea import hist
 from coffea.hist.export import export1d
 from matplotlib import pyplot as plt
-
+from scipy.optimize import curve_fit
+import textwrap
 import ROOT as r
 r.gSystem.Load('libRooFit')
 from bucoffea.plot.util import merge_datasets, merge_extensions, scale_xs_lumi
@@ -27,6 +28,8 @@ result = namedtuple('result',
                             'pt'
                             ])
 
+def fitfun(x, a, b, c):
+    return a * np.exp(-b * x) + c
 
 def make_templates(acc, fout):
     '''Reads coffea histograms and converts to ROOT templates.'''
@@ -255,7 +258,8 @@ colors = {
     "nominal" : "#08306b",
     "fine" : "#2171b5",
     "vfine" : "#6baed6",
-    "band" : "#fee6ce"
+    "band" : "#d9d9d9",
+    "fit" : "red"
 }
 colors['vcoarse'] = colors['vfine']
 colors['coarse'] = colors['fine']
@@ -298,10 +302,31 @@ def plot_comparison(result_file_template, variations):
         ax.set_xlabel("Photon $p_{T}$ (GeV)")
         ax.set_ylim(0,6)
 
+        # Fit
+        pars, _ = curve_fit(fitfun, x["nominal"], y["nominal"], sigma=dy["nominal"], p0=[3,1e-3,1])
+        xinterp = np.linspace(min(x["nominal"]),max(x["nominal"]), 1000)
+
+        # Plot
         unc = (1.25,1.25)
-        ax.fill_between(x['nominal'], y['nominal'] / unc[0], y['nominal'] * unc[1], label=f'nominal + lnN {1/unc[0]:.2f} / {unc[1]:.2f}',color=colors['band'],zorder=-2)
+        ax.fill_between(xinterp, fitfun(xinterp, *pars) / unc[0], fitfun(xinterp, *pars) * unc[1], label=f'nominal + lnN {1/unc[0]:.2f} / {unc[1]:.2f}',color=colors['band'],zorder=-2)
+
+        ax.plot(xinterp, fitfun(xinterp, *pars),color=colors["fit"], linestyle="-",zorder=11,linewidth=2, label="Fit to nominal")
+
         ax.legend(title="Binning variations")
 
+        ax.text(0.05, 0.75,
+                textwrap.dedent(
+                    f"""
+                    $\\bf{{f(x) = a\\times exp(-b \\times x) + c}}$
+                    a = {pars[0]:.2f}
+                    b = {pars[1]:.2e} / GeV
+                    c = {pars[2]:.2f}
+                    """),
+                fontsize=10,
+                horizontalalignment='left',
+                verticalalignment='bottom',
+                transform=ax.transAxes
+               )
         # Save plots
         outdir = pjoin('./plots/',os.path.basename(os.path.dirname(result_file_template)))
         if not os.path.exists(outdir):
