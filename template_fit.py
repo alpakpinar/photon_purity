@@ -296,7 +296,7 @@ def plot_comparison(result_file_template, variations):
         ax.grid(1,linestyle='--')
         ax.set_ylabel("Impurity (%)")
         ax.set_xlabel("Photon $p_{T}$ (GeV)")
-        ax.set_ylim(0,10)
+        ax.set_ylim(0,6)
 
         unc = (1.25,1.25)
         ax.fill_between(x['nominal'], y['nominal'] / unc[0], y['nominal'] * unc[1], label=f'nominal + lnN {1/unc[0]:.2f} / {unc[1]:.2f}',color=colors['band'],zorder=-2)
