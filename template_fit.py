@@ -44,18 +44,22 @@ def make_templates(acc, fout):
     scale_xs_lumi(h)
     h = merge_datasets(h)
 
-    pt_ax = hist.Bin('pt','$p_{T}$ (GeV)',list(range(200,300,50)) + list(range(300,700,100))  + [1000])
+    pt_ax = hist.Bin('pt','$p_{T}$ (GeV)',list(range(200,300,100)) + list(range(300,700,100))  + [1000])
     h = h.rebin('pt', pt_ax)
-    h_iso = h.project('cat','medium_nosieie')
-    h_noniso = h.project('cat','medium_nosieie_invertiso')
+    h_iso = h.integrate('cat','medium_nosieie')
+    h_noniso = h.integrate('cat','medium_nosieie_invertiso')
 
     # Make templates
     templates = {}
-    for year in [2016, 2017, 2018]:
+    for year in [2017, 2018]:
         mc = re.compile(f'(GJet).*HT.*{year}')
         data = re.compile(f'(EGamma).*{year}.*')
         templates[f'{year}_good'] = h_iso[mc].integrate('dataset')
-        templates[f'{year}_bad']  = h_noniso[data].integrate('dataset')
+        bad = h_noniso[data].integrate('dataset')
+        subtr = h_noniso[mc].integrate('dataset')
+        subtr.scale(-1)
+        bad.add(subtr)
+        templates[f'{year}_bad'] = bad
         templates[f'{year}_data'] = h_iso[data].integrate('dataset')
 
 
@@ -97,19 +101,23 @@ def fit_templates(template_file, variation):
 
     results = []
     limits = {
-        "nominal" : (0.004,0.02),
-        "coarse" : (0.004,0.02),
-        "vcoarse" : (0.004,0.02),
-        "fine" : (0.004,0.02),
+        "nominal" : (0.00,0.02),
+        "coarse" : (0.00,0.02),
+        "vcoarse" : (0.00,0.02),
+        "fine" : (0.00,0.02),
         "vfine" : (0.0058,0.02),
     }
     for pt_tag in set(pt_tags):
-        for year in [2016, 2017, 2018]:
+        for year in [2017, 2018]:
 
             x = RooRealVar("x","#sigma_{i#eta i#eta}",limits[variation][0],limits[variation][1],"")
 
             def get_hist(name):
                 h = f.Get(f'{name}_{pt_tag}').Clone()
+
+                for i in range(1,h.GetNbinsX()+1):
+                    if h.GetBinContent(i) <= 0:
+                        h.SetBinContent(i,1e-3)
                 print(name, h.Integral())
 
                 if variation == 'nominal':
@@ -161,7 +169,7 @@ def fit_templates(template_file, variation):
                                 dh_bad
                                 );
 
-            purity = RooRealVar('purity', 'purity', 0.95,0.7,1)
+            purity = RooRealVar('purity', 'purity', 0.95,0.9,1)
             # purity2 = RooRealVar('purity2', 'purity2', 1,0.,5)
 
             model = RooRealSumPdf(
@@ -182,6 +190,7 @@ def fit_templates(template_file, variation):
             c1.cd()
             frame.Draw()
             frame.SetMinimum(1e-7)
+            frame.SetMaximum(5)
 
             # print(rhf_bad.dataHist().sum())
             # print(rhf_good.dataHist().sum())
